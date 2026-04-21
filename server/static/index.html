@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NanoBand — Semantic Video Intelligence</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg:          #08080f;
+      --surface:     #0f0f1a;
+      --card:        #141422;
+      --border:      #1e1e35;
+      --accent:      #00ff88;
+      --accent-glow: #00ff8833;
+      --warn:        #ff9f0a;
+      --danger:      #ff375f;
+      --purple:      #bf5af2;
+      --text:        #e2e2f0;
+      --text-dim:    #6868a0;
+      --font-mono:   'SF Mono', 'Fira Code', 'Consolas', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-mono);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ──────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 14px 28px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .logo {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 3px;
+      color: var(--accent);
+      text-shadow: 0 0 20px var(--accent-glow);
+    }
+    .logo span { color: var(--text-dim); font-weight: 300; }
+
+    .tagline {
+      font-size: 11px;
+      letter-spacing: 1.5px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+    }
+
+    .conn-pill {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 100px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      transition: all .3s;
+    }
+    .conn-pill.off  { background: #ff375f15; border: 1px solid #ff375f40; color: var(--danger); }
+    .conn-pill.on   { background: #00ff8815; border: 1px solid #00ff8840; color: var(--accent); }
+    .conn-pill.live { background: #ff9f0a15; border: 1px solid #ff9f0a40; color: var(--warn); }
+
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .dot.pulse { animation: pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.7)} }
+
+    .session-timer {
+      font-size: 13px;
+      color: var(--text-dim);
+      font-variant-numeric: tabular-nums;
+      min-width: 60px;
+      text-align: right;
+    }
+
+    /* ── Main layout ──────────────────────────────── */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 20px;
+      padding: 20px;
+      overflow: hidden;
+    }
+
+    /* ── Video pane ───────────────────────────────── */
+    .video-pane {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .video-card {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #videoCanvas {
+      max-width: 100%;
+      max-height: 100%;
+      display: none;
+    }
+
+    .idle-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      color: var(--text-dim);
+    }
+    .idle-icon {
+      font-size: 56px;
+      opacity: .15;
+      animation: breathe 3s ease-in-out infinite;
+    }
+    @keyframes breathe { 0%,100%{opacity:.12} 50%{opacity:.22} }
+    .idle-title { font-size: 15px; color: var(--text-dim); }
+    .idle-url {
+      font-size: 12px;
+      color: var(--text-dim);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 14px;
+    }
+    .idle-url b { color: var(--accent); }
+
+    .video-overlay {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .mode-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+    }
+    .mode-badge.nano { background: #00ff8820; border: 1px solid var(--accent); color: var(--accent); }
+    .mode-badge.std  { background: #ff9f0a20; border: 1px solid var(--warn);   color: var(--warn); }
+
+    /* ── Metrics sidebar ──────────────────────────── */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      overflow-y: auto;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      flex-shrink: 0;
+    }
+
+    .card-label {
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 14px;
+    }
+
+    /* Status grid */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .stat {
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 11px 13px;
+    }
+    .stat-lbl { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 5px; }
+    .stat-val { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .green  { color: var(--accent); }
+    .yellow { color: var(--warn); }
+    .red    { color: var(--danger); }
+    .purple { color: var(--purple); }
+
+    /* Savings ring */
+    .savings-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .ring-container { position: relative; width: 130px; height: 130px; }
+    .ring-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .ring-bg   { fill: none; stroke: var(--border); stroke-width: 10; }
+    .ring-fill { fill: none; stroke: var(--accent); stroke-width: 10; stroke-linecap: round;
+                 stroke-dasharray: 339.3; stroke-dashoffset: 339.3;
+                 transition: stroke-dashoffset .8s cubic-bezier(.4,0,.2,1);
+                 filter: drop-shadow(0 0 6px var(--accent-glow)); }
+    .ring-text {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .ring-pct  { font-size: 28px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+    .ring-unit { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; }
+    .savings-sub { font-size: 12px; color: var(--text-dim); text-align: center; }
+    .savings-sub b { color: var(--text); }
+
+    /* Bandwidth bars */
+    .bw-row { display: flex; flex-direction: column; gap: 7px; }
+    .bw-row + .bw-row { margin-top: 14px; }
+    .bw-meta { display: flex; justify-content: space-between; font-size: 12px; }
+    .bw-name { color: var(--text-dim); }
+    .bw-val  { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .bar-track { height: 5px; background: var(--surface); border-radius: 3px; overflow: hidden; }
+    .bar-fill  { height: 100%; border-radius: 3px; transition: width .6s ease; }
+    .bar-fill.nano { background: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
+    .bar-fill.std  { background: var(--danger); }
+
+    /* Log */
+    .log-list {
+      display: flex; flex-direction: column; gap: 5px;
+      max-height: 130px; overflow-y: auto;
+    }
+    .log-entry {
+      display: flex; gap: 10px; align-items: flex-start;
+      font-size: 11px; line-height: 1.4;
+      padding: 4px 8px;
+      border-radius: 5px;
+      background: var(--surface);
+      border-left: 2px solid var(--border);
+    }
+    .log-time { color: var(--accent); min-width: 44px; flex-shrink: 0; }
+    .log-msg  { color: var(--text-dim); }
+
+    ::-webkit-scrollbar { width: 3px; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">NANO<span>BAND</span></div>
+  <div class="tagline">Semantic Video Intelligence</div>
+  <div class="session-timer" id="timer">00:00</div>
+  <div class="conn-pill off" id="pill">
+    <div class="dot pulse" id="dot"></div>
+    <span id="pillText">AWAITING MOBILE</span>
+  </div>
+</header>
+
+<main>
+  <!-- ── Video ── -->
+  <div class="video-pane">
+    <div class="video-card">
+      <canvas id="videoCanvas"></canvas>
+
+      <div class="idle-state" id="idleState">
+        <div class="idle-icon">◉</div>
+        <div class="idle-title">Waiting for mobile connection…</div>
+        <div class="idle-url">
+          Connect the Flutter app to&nbsp;
+          <b id="wsUrl">ws://&lt;host&gt;:8000/ws/mobile</b>
+        </div>
+      </div>
+
+      <div class="video-overlay">
+        <div class="mode-badge nano" id="modeBadge" style="display:none">◆ NANOBAND</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Sidebar ── -->
+  <div class="sidebar">
+
+    <!-- Status -->
+    <div class="card">
+      <div class="card-label">System Status</div>
+      <div class="stat-grid">
+        <div class="stat">
+          <div class="stat-lbl">Mode</div>
+          <div class="stat-val green" id="sMode">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-lbl">State</div>
+          <div class="stat-val green" id="sState">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-lbl">Video FPS</div>
+          <div class="stat-val" id="sFps">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-lbl">Anchor ∆t</div>
+          <div class="stat-val" id="sInterval">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Savings ring -->
+    <div class="card">
+      <div class="card-label">Bandwidth Savings</div>
+      <div class="savings-wrap">
+        <div class="ring-container">
+          <svg class="ring-svg" viewBox="0 0 120 120">
+            <circle class="ring-bg"   cx="60" cy="60" r="54"/>
+            <circle class="ring-fill" cx="60" cy="60" r="54" id="ringFill"/>
+          </svg>
+          <div class="ring-text">
+            <span class="ring-pct" id="ringPct">0</span>
+            <span class="ring-unit">% SAVED</span>
+          </div>
+        </div>
+        <div class="savings-sub" id="savingsSub">—</div>
+      </div>
+    </div>
+
+    <!-- Bandwidth bars -->
+    <div class="card">
+      <div class="card-label">Cumulative Data Used</div>
+      <div class="bw-row">
+        <div class="bw-meta">
+          <span class="bw-name">◆ NanoBand (actual)</span>
+          <span class="bw-val green" id="bwActual">0.000 MB</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill nano" id="barActual" style="width:0%"></div></div>
+      </div>
+      <div class="bw-row">
+        <div class="bw-meta">
+          <span class="bw-name">▲ Standard 30 FPS JPEG</span>
+          <span class="bw-val red" id="bwTheory">0.000 MB</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill std" id="barTheory" style="width:100%"></div></div>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="card">
+      <div class="card-label">Activity Log</div>
+      <div class="log-list" id="logList">
+        <div class="log-entry">
+          <span class="log-time">00:00</span>
+          <span class="log-msg">Server ready. Waiting for connection.</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+  // ── WebSocket ──────────────────────────────────────────────────────
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws/web`);
+
+  document.getElementById('wsUrl').textContent =
+    `ws://${location.hostname}:${location.port || 8000}/ws/mobile`;
+
+  // ── State ──────────────────────────────────────────────────────────
+  let sessionStart = null;
+  let currentMode  = 'NANOBAND';
+  let timerInterval = null;
+  const RING_CIRC = 2 * Math.PI * 54; // ≈ 339.3
+
+  // ── Timer ──────────────────────────────────────────────────────────
+  function fmtTime(ms) {
+    const s = Math.floor(ms / 1000);
+    return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+  }
+  function elapsed() { return sessionStart ? fmtTime(Date.now() - sessionStart) : '00:00'; }
+
+  // ── Video canvas ───────────────────────────────────────────────────
+  const canvas = document.getElementById('videoCanvas');
+  const ctx    = canvas.getContext('2d');
+  const imgObj = new Image();
+  imgObj.onload = () => {
+    canvas.width  = imgObj.naturalWidth;
+    canvas.height = imgObj.naturalHeight;
+    ctx.drawImage(imgObj, 0, 0);
+  };
+
+  function showFrame(b64) {
+    document.getElementById('idleState').style.display = 'none';
+    canvas.style.display = 'block';
+    imgObj.src = 'data:image/jpeg;base64,' + b64;
+  }
+
+  // ── Log ────────────────────────────────────────────────────────────
+  function addLog(msg, color) {
+    const list = document.getElementById('logList');
+    const el = document.createElement('div');
+    el.className = 'log-entry';
+    if (color) el.style.borderLeftColor = color;
+    el.innerHTML = `<span class="log-time">${elapsed()}</span><span class="log-msg">${msg}</span>`;
+    list.insertBefore(el, list.firstChild);
+    if (list.children.length > 30) list.removeChild(list.lastChild);
+  }
+
+  // ── Metrics update ─────────────────────────────────────────────────
+  const stateColorMap = {
+    'STABLE':       'green',
+    'TALKING':      'yellow',
+    'HEAD MOVING':  'red',
+    'MOUTH TRIGGER':'purple',
+    'WAITING':      '',
+  };
+
+  function updateMetrics(m) {
+    // State
+    const stateEl = document.getElementById('sState');
+    stateEl.textContent  = m.status || '—';
+    stateEl.className    = 'stat-val ' + (stateColorMap[m.status] || '');
+
+    document.getElementById('sMode').textContent     = currentMode;
+    document.getElementById('sFps').textContent      = m.current_fps ? `${m.current_fps} FPS` : '—';
+    document.getElementById('sInterval').textContent = m.current_interval ? `${m.current_interval}s` : '—';
+
+    // Savings ring
+    const pct = Math.max(0, Math.min(100, m.savings_pct || 0));
+    document.getElementById('ringPct').textContent = pct.toFixed(1);
+    const offset = RING_CIRC * (1 - pct / 100);
+    document.getElementById('ringFill').style.strokeDashoffset = offset;
+
+    // Bandwidth bars
+    const actual = m.actual_mb || 0;
+    const theory = m.theoretical_mb || 0;
+    document.getElementById('bwActual').textContent = `${actual.toFixed(3)} MB`;
+    document.getElementById('bwTheory').textContent = `${theory.toFixed(3)} MB`;
+
+    const saved = Math.max(0, theory - actual);
+    document.getElementById('savingsSub').innerHTML =
+      `Saved <b>${saved.toFixed(3)} MB</b> vs Standard`;
+
+    if (theory > 0) {
+      const ratio = Math.min((actual / theory) * 100, 100);
+      document.getElementById('barActual').style.width = ratio + '%';
+      document.getElementById('barTheory').style.width = '100%';
+    }
+  }
+
+  // ── Connection pill ────────────────────────────────────────────────
+  function setPill(state, text) {
+    const pill = document.getElementById('pill');
+    pill.className = 'conn-pill ' + state;
+    document.getElementById('pillText').textContent = text;
+  }
+
+  // ── Mode badge ─────────────────────────────────────────────────────
+  function setModeBadge(mode) {
+    currentMode = mode;
+    const b = document.getElementById('modeBadge');
+    b.style.display = 'flex';
+    if (mode === 'NANOBAND') {
+      b.className = 'mode-badge nano';
+      b.textContent = '◆ NANOBAND';
+    } else {
+      b.className = 'mode-badge std';
+      b.textContent = '▲ STANDARD';
+    }
+  }
+
+  // ── WebSocket events ───────────────────────────────────────────────
+  ws.onopen = () => {
+    setPill('on', 'DASHBOARD LIVE');
+    addLog('Dashboard connected to NanoBand server.', 'var(--accent)');
+  };
+
+  ws.onclose = () => {
+    setPill('off', 'DISCONNECTED');
+    addLog('Lost server connection.', 'var(--danger)');
+  };
+
+  ws.onmessage = ({ data }) => {
+    const msg = JSON.parse(data);
+
+    if (msg.type === 'mobile_connected') {
+      setPill('live', 'MOBILE CONNECTED');
+      sessionStart = Date.now();
+      timerInterval = setInterval(() => {
+        document.getElementById('timer').textContent = elapsed();
+      }, 500);
+      addLog('Mobile transmitter connected.', 'var(--accent)');
+    }
+
+    else if (msg.type === 'mobile_disconnected') {
+      setPill('on', 'AWAITING MOBILE');
+      clearInterval(timerInterval);
+      addLog('Mobile disconnected.', 'var(--warn)');
+    }
+
+    else if (msg.type === 'frame') {
+      setModeBadge('NANOBAND');
+      showFrame(msg.data);
+      if (msg.metrics) updateMetrics(msg.metrics);
+    }
+
+    else if (msg.type === 'standard_frame') {
+      setModeBadge('STANDARD');
+      showFrame(msg.data);
+      if (msg.metrics) updateMetrics(msg.metrics);
+    }
+
+    else if (msg.type === 'anchor_received') {
+      addLog('Anchor frame received → triangulation rebuilt.', 'var(--accent)');
+    }
+
+    else if (msg.type === 'metrics') {
+      updateMetrics(msg);
+    }
+
+    else if (msg.type === 'call_ended') {
+      clearInterval(timerInterval);
+      const s = msg.summary;
+      addLog(
+        `Call ended — saved ${s.savings_pct}% | `+
+        `${(s.theoretical_mb - s.actual_mb).toFixed(2)} MB conserved`,
+        'var(--warn)'
+      );
+      if (s) updateMetrics(s);
+    }
+  };
+</script>
+</body>
+</html>
