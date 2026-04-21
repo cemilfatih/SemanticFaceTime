@@ -10,16 +10,16 @@ import numpy as np
 
 
 class WarpingEngine:
-    FRAME_KB: float = 50.0   
+    FRAME_KB: float = 18.0   
     STANDARD_FPS: float = 30.0
 
-    STABLE_INTERVAL: float = 0.5
-    TALKING_INTERVAL: float = 0.3
-    HEAD_MOVE_INTERVAL: float = 0.2
+    STABLE_INTERVAL: float = 1.0
+    TALKING_INTERVAL: float = 0.5
+    HEAD_MOVE_INTERVAL: float = 0.3
 
-    TALK_THRESHOLD: float = 1.8
-    HEAD_THRESHOLD: float = 5.0
-    MOUTH_TRIGGER_PX: float = 8.0
+    TALK_THRESHOLD: float = 2.5
+    HEAD_THRESHOLD: float = 7.0
+    MOUTH_TRIGGER_PX: float = 12.0
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -77,6 +77,8 @@ class WarpingEngine:
         with self._lock:
             now = time.time()
             self._finalize_mode_unlocked(now)
+            
+            # Gerçek matematiksel byte hesapları
             nb_theoretical_mb = (self._nb_elapsed * self.STANDARD_FPS * self.FRAME_KB) / 1024.0
             std_actual_mb = self._std_bytes / 1048576.0
             nb_actual_mb = self._nb_bytes / 1048576.0
@@ -88,9 +90,23 @@ class WarpingEngine:
             if total_theoretical_mb > 0:
                 savings = max(0.0, (1.0 - total_actual_mb / total_theoretical_mb) * 100)
 
+            # 🎯 FLUTTER EKRANLARINI DOLDURAN KESİN YAMA
+            # Flutter Modal ekranı ve Local Storage (Kayıt) servisi için gerekli olan
+            # bütün isim kombinasyonlarını (camelCase ve snake_case) gönderiyoruz.
             return {
+                # --- Session Summary Modal Ekranı İçin (Yılan İsimlendirme) ---
+                "savings_pct": round(savings, 1),
+                "nanoband_actual_mb": round(nb_actual_mb, 3),
+                "nanoband_theoretical_mb": round(nb_theoretical_mb, 3),
+                "standard_actual_mb": round(std_actual_mb, 3),
+                "nanoband_seconds": round(self._nb_elapsed, 1),
+                "standard_seconds": round(self._std_elapsed, 1),
+
+                # --- Storage Service (Ana Ekran Kayıtları) İçin (Deve İsimlendirme) ---
                 "savingsPct": round(savings, 1),
-                "savedMb": round(max(0, total_theoretical_mb - total_actual_mb), 2),
+                "nanobandActualMb": round(nb_actual_mb, 3),
+                "nanobandTheoreticalMb": round(nb_theoretical_mb, 3),
+                "standardActualMb": round(std_actual_mb, 3),
                 "nanobandSeconds": round(self._nb_elapsed, 1),
                 "standardSeconds": round(self._std_elapsed, 1)
             }

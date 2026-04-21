@@ -99,15 +99,21 @@ async def mobile_endpoint(ws: WebSocket) -> None:
 
             # ── Landmark packet (NanoBand mode) ───────────────────
             elif kind == "landmarks":
+                # 🎯 ÇÖZÜM 2: Gecikme (Lag) ve Kuyruk Şişmesini Engelleme
+                # Eğer sunucu meşgulse 'continue' diyerek eski kareyi çöpe atıyoruz.
+                # Böylece sistem her zaman sıfır gecikme ile "anlık" mimiklerini çizer!
+                if _warp_lock.locked():
+                    continue
 
-                lms = msg["data"]
-                img_w = msg.get("width", 640)
-                img_h = msg.get("height", 480)
-                loop = asyncio.get_event_loop()
+                async with _warp_lock:
+                    lms = msg["data"]
+                    img_w = msg.get("width", 640)
+                    img_h = msg.get("height", 480)
+                    loop = asyncio.get_event_loop()
 
-                warped, status, needs_anchor, metrics = await loop.run_in_executor(
-                    _executor, engine.process, lms, img_w, img_h
-                )
+                    warped, status, needs_anchor, metrics = await loop.run_in_executor(
+                        _executor, engine.process, lms, img_w, img_h
+                    )
 
                 # Backend is the decision-maker: request anchor if needed
                 if needs_anchor:
