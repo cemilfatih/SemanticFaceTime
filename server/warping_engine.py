@@ -1,13 +1,5 @@
 """
 NanoBand Warping Engine
-Ported from poc.py — all math is identical, restructured for async server use.
-Thread-safe: lock covers mutable state; heavy warping runs outside the lock on copied data.
-
-Bandwidth model
-───────────────
-Standard mode  → savings = 0 % (it IS the reference baseline).
-NanoBand mode  → savings = 1 - (nanoband_actual / (nanoband_seconds × 30fps × 50 KB)).
-Session summary uses NanoBand-only numbers so the comparison is honest.
 """
 import time
 import threading
@@ -18,12 +10,12 @@ import numpy as np
 
 
 class WarpingEngine:
-    FRAME_KB: float = 50.0   # ~50 KB per 30-FPS JPEG frame (baseline)
+    FRAME_KB: float = 50.0   
     STANDARD_FPS: float = 30.0
 
-    STABLE_INTERVAL: float = 2.0
-    TALKING_INTERVAL: float = 0.8
-    HEAD_MOVE_INTERVAL: float = 0.4
+    STABLE_INTERVAL: float = 0.5
+    TALKING_INTERVAL: float = 0.3
+    HEAD_MOVE_INTERVAL: float = 0.2
 
     TALK_THRESHOLD: float = 1.8
     HEAD_THRESHOLD: float = 5.0
@@ -31,36 +23,25 @@ class WarpingEngine:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-
         self.anchor_frame: Optional[np.ndarray] = None
         self.anchor_points_ext: Optional[np.ndarray] = None
         self.tri_indices: list = []
-
         self.prev_landmarks: Optional[np.ndarray] = None
         self.smoothed_lms: Optional[np.ndarray] = None
         self.last_anchor_time: float = 0.0
         self.current_interval: float = self.STABLE_INTERVAL
         self.status: str = "WAITING"
 
-        # ── Bandwidth tracking (mode-aware) ──────────────────────────
         self._session_start: float = time.time()
-
-        # NanoBand counters
         self._nb_bytes: int = 0
-        self._nb_elapsed: float = 0.0        # finalized seconds in NanoBand
-        self._nb_mode_start: Optional[float] = None  # None = not in NB mode
-
-        # Standard counters
+        self._nb_elapsed: float = 0.0
+        self._nb_mode_start: Optional[float] = None
         self._std_bytes: int = 0
         self._std_elapsed: float = 0.0
         self._std_mode_start: Optional[float] = None
-
-        self._current_mode: str = ''          # 'nanoband' | 'standard'
-
-    # ── Public API ───────────────────────────────────────────────────
+        self._current_mode: str = ''
 
     def add_bytes(self, n: int, mode: str) -> None:
-        """Track bytes + time spent in each mode."""
         with self._lock:
             now = time.time()
             if mode != self._current_mode:
@@ -77,13 +58,11 @@ class WarpingEngine:
 
     def set_anchor(self, frame_bytes: bytes, landmarks: list) -> None:
         arr = np.frombuffer(frame_bytes, dtype=np.uint8)
-        # Resmi OpenCV standart formatında (BGR) çöz
         frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
         if frame is None or len(landmarks) < 3:
             return
         
-        # DİKKAT: Buradaki cv2.cvtColor(...) satırını TAMAMEN SİLDİK!
-        # Flutter'dan gelen JPEG zaten doğru renklerde, OpenCV'nin kafasını karıştırmıyoruz.
+        # DİKKAT: cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) BURADAN TAMAMEN SİLİNDİ!
         
         lms = np.array(landmarks, dtype=np.float32)
         h, w = frame.shape[:2]
@@ -98,9 +77,6 @@ class WarpingEngine:
         with self._lock:
             now = time.time()
             self._finalize_mode_unlocked(now)
-            
-            # MATEMATİK DÜZELTİLDİ: Sadece NanoBand modunda "teorik" 30 FPS faturası yazılır.
-            # Standard modda ne harcandıysa teori de odur (Tasarruf sağlamaz).
             nb_theoretical_mb = (self._nb_elapsed * self.STANDARD_FPS * self.FRAME_KB) / 1024.0
             std_actual_mb = self._std_bytes / 1048576.0
             nb_actual_mb = self._nb_bytes / 1048576.0
@@ -121,13 +97,11 @@ class WarpingEngine:
 
     def _metrics_unlocked(self, status: str, interval: float, mode: str) -> dict:
         now = time.time()
-        
         nb_el = self._nb_elapsed + (now - self._nb_mode_start if self._current_mode == 'nanoband' and self._nb_mode_start else 0)
         std_el = self._std_elapsed + (now - self._std_mode_start if self._current_mode == 'standard' and self._std_mode_start else 0)
 
         nb_actual_mb = self._nb_bytes / 1048576.0
         std_actual_mb = self._std_bytes / 1048576.0
-        
         nb_theoretical_mb = (nb_el * self.STANDARD_FPS * self.FRAME_KB) / 1024.0
         
         total_actual_mb = nb_actual_mb + std_actual_mb
@@ -146,15 +120,9 @@ class WarpingEngine:
             "current_interval": interval,
             "current_fps": round(1.0 / interval, 1) if interval > 0 else 0
         }
-    def process(
-        self,
-        landmarks: list,
-        img_w: int,
-        img_h: int,
-    ) -> tuple[Optional[np.ndarray], str, bool, dict]:
+
+    def process(self, landmarks: list, img_w: int, img_h: int) -> tuple[Optional[np.ndarray], str, bool, dict]:
         with self._lock:
-            # 🎯 KESİN ÇÖZÜM: Dart'tan gelen 1-2 piksellik yuvarlama hatalarını yoksay!
-            # Resmin altının kesilmesini sonsuza dek engeller.
             if self.anchor_frame is not None:
                 img_h, img_w = self.anchor_frame.shape[:2]
 
@@ -163,12 +131,11 @@ class WarpingEngine:
             if self.smoothed_lms is None or self.smoothed_lms.shape != raw_lms.shape:
                 self.smoothed_lms = raw_lms.copy()
             else:
-                self.smoothed_lms = self.smoothed_lms * 0.2 + raw_lms * 0.8
+                self.smoothed_lms = self.smoothed_lms * 0.4 + raw_lms * 0.6
             
             curr_lms = self.smoothed_lms.astype(np.int32)
 
             motion = _calc_motion(self.prev_landmarks, curr_lms)
-            curr_mouth = _mouth_open(curr_lms)
 
             if motion >= self.HEAD_THRESHOLD:
                 self.current_interval = self.HEAD_MOVE_INTERVAL
@@ -180,21 +147,8 @@ class WarpingEngine:
                 self.current_interval = self.STABLE_INTERVAL
                 self.status = "STABLE"
 
-            force = False
-            if self.anchor_frame is not None and self.anchor_points_ext is not None:
-                anchor_mouth = _mouth_open(
-                    self.anchor_points_ext[: len(landmarks)].astype(np.int32)
-                )
-                if abs(curr_mouth - anchor_mouth) > self.MOUTH_TRIGGER_PX:
-                    force = True
-                    self.status = "MOUTH TRIGGER"
-
             elapsed = time.time() - self.last_anchor_time
-            needs_anchor = (
-                self.anchor_frame is None
-                or elapsed > self.current_interval
-                or force
-            )
+            needs_anchor = (self.anchor_frame is None or elapsed > self.current_interval)
 
             self.prev_landmarks = curr_lms.copy()
             captured_status = self.status
@@ -217,8 +171,6 @@ class WarpingEngine:
         with self._lock:
             return self._metrics_unlocked(self.status, self.current_interval, 'standard')
 
-
-
     def reset(self) -> None:
         with self._lock:
             self.anchor_frame = None
@@ -238,10 +190,7 @@ class WarpingEngine:
             self._std_mode_start = None
             self._current_mode = ''
 
-    # ── Private ──────────────────────────────────────────────────────
-
     def _finalize_mode_unlocked(self, now: float) -> None:
-        """Close out elapsed time for the outgoing mode."""
         if self._current_mode == 'nanoband' and self._nb_mode_start is not None:
             self._nb_elapsed += now - self._nb_mode_start
             self._nb_mode_start = None
@@ -250,20 +199,11 @@ class WarpingEngine:
             self._std_mode_start = None
 
 
-
-
-# ── Pure functions ────────────────────────────────────────────────────
-
 def _calc_motion(prev: Optional[np.ndarray], curr: np.ndarray) -> float:
     if prev is None:
         return 0.0
+    # KESİN ÇÖZÜM: Dudak ve kaş hareketini anında yakalamak için np.mean yerine np.max kullanıyoruz!
     return float(np.max(np.linalg.norm(curr.astype(float) - prev.astype(float), axis=1)))
-
-
-def _mouth_open(lms: np.ndarray) -> float:
-    if lms is None or len(lms) < 15:
-        return 0.0
-    return float(np.linalg.norm(lms[13].astype(float) - lms[14].astype(float)))
 
 
 def _build_delaunay(landmarks: np.ndarray, w: int, h: int) -> tuple[list, np.ndarray]:
@@ -272,13 +212,9 @@ def _build_delaunay(landmarks: np.ndarray, w: int, h: int) -> tuple[list, np.nda
         [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1],
          [w // 2, 0], [0, h // 2], [w - 1, h // 2], [w // 2, h - 1]],
     ])
-    
-    # DEVASA GÜVENLİK ALANI: -211 Hatasını sonsuza dek çözer
     rect = (-5000, -5000, w + 10000, h + 10000)
     subdiv = cv2.Subdiv2D(rect)
-    
     for p in ext_pts:
-        # Noktaları çerçeve içine zorla (Clamping)
         px = max(-4900, min(w + 9900, float(p[0])))
         py = max(-4900, min(h + 9900, float(p[1])))
         subdiv.insert((px, py))
@@ -294,7 +230,6 @@ def _build_delaunay(landmarks: np.ndarray, w: int, h: int) -> tuple[list, np.nda
                 idxs.append(i)
         if len(idxs) == 3:
             tri_indices.append(idxs)
-
     return tri_indices, ext_pts
 
 
