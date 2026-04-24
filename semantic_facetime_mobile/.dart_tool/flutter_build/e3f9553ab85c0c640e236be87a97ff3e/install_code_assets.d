@@ -1,0 +1,1 @@
+ /Users/cemilfatih/Desktop/projects/ongoingProjects/semantic_facetime/semantic_facetime_mobile/.dart_tool/flutter_build/e3f9553ab85c0c640e236be87a97ff3e/native_assets.json: 
